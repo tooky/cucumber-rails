@@ -50,67 +50,111 @@ module Cucumber
       end
 
       def _tableish(html, row_selector, column_selectors) #:nodoc
-        doc = Nokogiri::HTML(html)
-        spans = nil
-        max_cols = 0
+        Table.new(html, row_selector, column_selectors).table
+      end
 
-        # Parse the table.
-        rows = doc.search(row_selector).map do |row|
-          cells = case(column_selectors)
+      class Table
+
+        attr_reader :doc, :row_selector, :column_selectors
+
+        def initialize(html, row_selector, column_selectors)
+          @doc, @row_selector, @column_selectors = Nokogiri::HTML(html), row_selector, column_selectors
+          @table = [] 
+          parse_table
+        end
+
+        def table
+          max_columns = @table.inject(0) {|max, row| [max, row.length].max}
+          @table.map do |row|
+            maximise_row_length(row, max_columns)
+            remove_nil_cells(row)
+          end
+        end
+
+        private
+        def parse_table
+          rows.each_with_index do |row, row_index|
+            extract_cells(row).each do |cell|
+              value = value_of(cell)
+              rows_span, cols_span = parse_spans(cell)
+              add_to_row(row_index, value, cols_span, rows_span)
+            end
+          end
+        end
+
+        def remove_nil_cells(row)
+          row.map {|cell| cell.nil? ? '' : cell}
+        end
+
+        def maximise_row_length(row, length)
+          row[length - 1] ||= nil
+        end
+
+        def add_to_row(row_index, value, width, height)
+          cell_index = next_free_cell_for(row_index)
+          width.times do |x|
+            height.times do |y|
+              set_cell(x + cell_index, y + row_index, '')
+            end
+          end
+          set_cell(cell_index, row_index, value)
+        end
+
+        def set_cell(cell_index, row_index, value)
+          @table[row_index] ||= []
+          @table[row_index][cell_index] = value
+        end
+
+        def next_free_cell_for(row_index)
+          return 0 if @table[row_index].nil?
+          @table[row_index].index(nil) || @table[row_index].length
+        end
+
+        def rows
+          doc.search(row_selector)
+        end
+
+        def extract_cells(row)
+          case(column_selectors)
           when String
             row.search(column_selectors)
           when Proc
             column_selectors.call(row)
           end
-
-          # TODO: max_cols should be sum of colspans
-          max_cols = [max_cols, cells.length].max
-
-          spans ||= Array.new(max_cols, 1)
-
-          cell_index = 0
-
-          cells = (0...spans.length).inject([]) do |array, n|
-            span = spans[n]
-
-            cell = if span > 1
-              row_span, col_span = 1, 1
-              nil
-            else
-              cell = cells[cell_index]
-
-              row_span, col_span = _parse_spans(cell)
-
-              if col_span > 1
-                ((n + 1)...(n + col_span)).each do |m|
-                  spans[m] = row_span + 1
-                end
-              end
-
-              cell_index +=1
-              cell
-            end
-
-            spans[n] = row_span > 1 ? row_span : ([span - 1, 1].max)
-
-            array << case cell
-              when String then cell.strip
-              when nil then ''
-              else cell.text.strip
-            end
-
-            array
-          end
-
-          cells
         end
+
+        def parse_spans(cell)
+          cell.is_a?(Nokogiri::XML::Node) ?
+            [rowspan(cell), cellspan(cell)] :
+            [1, 1]
+        end
+
+        def rowspan(cell)
+          span('row', cell)
+        end
+
+        def cellspan(cell)
+          span('col', cell)
+        end
+
+        def max(x,y)
+          [x,y].max
+        end
+
+        def span(type, cell)
+          max(cell.attributes["#{type}span"].to_s.to_i, 1)
+        end
+
+        def value_of(cell)
+          case cell
+            when String then cell.strip
+            when nil then ''
+            else cell.text.strip
+          end
+        end
+
       end
 
-      def _parse_spans(cell)
-        cell.is_a?(Nokogiri::XML::Node) ?
-          [cell.attributes['rowspan'].to_s.to_i || 1, cell.attributes['colspan'].to_s.to_i || 1] :
-          [1, 1]
-      end
     end
   end
 end

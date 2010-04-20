@@ -36,7 +36,7 @@ module Cucumber
           ]
         end
 
-        it "should size to the first row" do
+        it "should size to the longest row" do
           html = <<-HTML
             <table id="tools">
               <tr>
@@ -58,9 +58,9 @@ module Cucumber
           HTML
 
           _tableish(html, 'table#tools tr', 'td,th').should == [
-            ['tool',     'dude',],
-            ['webrat',   'bryan'],
-            ['cucumber', 'aslak']
+            ['tool',     'dude',  '',        ''],
+            ['webrat',   'bryan', 'crapola', ''],
+            ['cucumber', 'aslak', 'gunk',    'filth']
           ]
         end
 
